@@ -1,23 +1,33 @@
-# Use an official base image (you should change this to your appropriate language/runtime)
-FROM ubuntu:22.04
+# Use a slim, official Python image for smaller size, better than plain Ubuntu
+FROM python:3.11-slim-bookworm
 
-# Install dependencies (example: Python, Node, C++ compilers, etc.)
-RUN apt-get update && apt-get install -y python3 python3-pip gcc nodejs npm
+# Set environment variables for the application (useful for debugging and setup)
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
 
-# Set working directory
-WORKDIR /app
+# Set the working directory in the container
+WORKDIR /usr/src/app
 
-# Copy project files
-COPY . .
+# Install system dependencies needed by the database driver (like PostgreSQL client)
+# This is crucial for connecting to the separate database container
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Expose the port the app runs on (If required)
-# EXPOSE 3000
+# Copy the requirements file and install dependencies
+COPY ./src/requirements.txt .
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
 
-# Example: Install Node.js deps
-# RUN npm install
+# Copy the rest of your application code
+COPY ./src .
 
-# Example: Install Python deps
-# RUN pip install -r requirements.txt
+# Expose the port the application runs on
+EXPOSE 8000
 
-# Default command (you should change this)
-CMD ["echo", "Hello from Docker! Customize me in Dockerfile."]
+# Command to run the Python server (using Gunicorn for production-like hosting)
+# NOTE: The command is a placeholder, you would use your actual entrypoint
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "app:app"]
