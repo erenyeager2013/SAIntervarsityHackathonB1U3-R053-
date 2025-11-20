@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Student Registration</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-r from-blue-500 to-purple-600 min-h-screen flex items-center justify-center p-4">
+  
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
+    <h1 class="text-2xl font-bold text-gray-800 text-center mb-2">New Student Registration</h1>
+    <p class="text-gray-500 text-center mb-6">Create your student account to access the portal.</p>
+
+    <form id="registrationForm" class="space-y-4">
+      <div>
+        <label for="reg_student_id" class="block text-sm font-medium text-gray-700 mb-1">Student ID (min 8 chars)</label>
+        <input id="reg_student_id" type="text" placeholder="Enter your unique student ID"
+          class="w-full p-3 border rounded-lg focus:outline-blue-500" required>
+      </div>
+      <div>
+        <label for="reg_password" class="block text-sm font-medium text-gray-700 mb-1">Password (min 8 chars)</label>
+        <input id="reg_password" type="password" placeholder="Choose a secure password"
+          class="w-full p-3 border rounded-lg focus:outline-blue-500" required>
+      </div>
+      <div>
+        <label for="confirm_password" class="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+        <input id="confirm_password" type="password" placeholder="Repeat your password"
+          class="w-full p-3 border rounded-lg focus:outline-blue-500" required>
+      </div>
+      <button type="submit" class="w-full bg-gradient-to-r from-green-500 to-teal-600 text-white p-3 rounded-xl font-semibold hover:shadow-lg transition">
+        Register Account
+      </button>
+    </form>
+
+    <div id="regResult" class="mt-4"></div>
+    
+    <div class="mt-6 text-center text-sm">
+      <p class="text-gray-600">Already registered? 
+        <a href="/" class="text-blue-500 hover:text-blue-700 font-semibold transition">Go to Login</a>
+      </p>
+    </div>
+    
+  </div>
+
+  <script>
+    function showMessage(containerId, message, type) {
+      const container = document.getElementById(containerId);
+      const color = type === "error" ? "bg-red-100 text-red-600 border-red-400"
+                                     : "bg-green-100 text-green-600 border-green-400";
+      container.innerHTML = `<div class="p-3 border-l-4 rounded ${color}">${message}</div>`;
+    }
+
+    function clearMessages() {
+      document.getElementById('regResult').innerHTML = '';
+      document.querySelectorAll('input').forEach(input => {
+        input.classList.remove('border-red-500', 'border-green-500');
+      });
+    }
+
+    function validateStudentId(studentId) {
+      return studentId.trim().length >= 8;
+    }
+
+    function validatePassword(password) {
+      return password.length >= 8;
+    }
+
+    document.getElementById("registrationForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      clearMessages();
+
+      const student_id = document.getElementById("reg_student_id").value;
+      const password = document.getElementById("reg_password").value;
+      const confirm_password = document.getElementById("confirm_password").value;
+
+      let hasError = false;
+
+      if (!validateStudentId(student_id)) {
+        document.getElementById('reg_student_id').classList.add('border-red-500');
+        showMessage('regResult', 'Student ID must be at least 8 characters long.', 'error');
+        hasError = true;
+      }
+
+      if (!validatePassword(password)) {
+        document.getElementById('reg_password').classList.add('border-red-500');
+        showMessage('regResult', 'Password must be at least 8 characters long.', 'error');
+        hasError = true;
+      }
+      
+      if (password !== confirm_password) {
+        document.getElementById('confirm_password').classList.add('border-red-500');
+        showMessage('regResult', 'Passwords do not match.', 'error');
+        hasError = true;
+      }
+
+      if (hasError) return;
+      
+      const regButton = e.target.querySelector('button[type="submit"]');
+      const originalText = regButton.textContent;
+      regButton.textContent = 'Registering...';
+      regButton.disabled = true;
+
+      try {
+        const response = await fetch("/api/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ student_id: student_id, password: password })
+        });
+
+        const data = await response.json();
+        console.log('Server response:', data);
+
+        if (data.success) {
+          showMessage('regResult', `Registration successful for ID: ${data.student_id}. Redirecting to login...`, 'success');
+          // Automatically redirect to the login page after a short delay
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 2000);
+        } else {
+          // If registration fails (e.g., ID already exists)
+          showMessage('regResult', data.message, 'error');
+        }
+      } catch (err) {
+        console.error(err);
+        showMessage('regResult', "A network or server error occurred during registration.", "error");
+      } finally {
+        regButton.textContent = originalText;
+        regButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

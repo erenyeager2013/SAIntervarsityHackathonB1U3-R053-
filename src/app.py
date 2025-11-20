@@ -1,9 +1,9 @@
 import os
 import time
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 import psycopg2
-from psycopg2 import OperationalError
-from werkzeug.security import check_password_hash # Python equivalent of password_verify
+from psycopg2 import OperationalError, errors
+from werkzeug.security import check_password_hash, generate_password_hash # Import for hashing
 
 app = Flask(__name__)
 
@@ -32,10 +32,11 @@ def get_db_connection():
             return conn
         except OperationalError as e:
             if i < MAX_RETRIES - 1:
-                print(f"DB connection attempt {i+1} failed. Retrying in {RETRY_DELAY}s...")
+                # print(f"DB connection attempt {i+1} failed. Retrying in {RETRY_DELAY}s...")
                 time.sleep(RETRY_DELAY)
             else:
-                raise OperationalError(f"Failed to connect to database after {MAX_RETRIES} attempts: {e}")
+                # Simplified error raising since this function is usually called within a try/except
+                raise OperationalError(f"Failed to connect to database after {MAX_RETRIES} attempts.")
 
 def initialize_db():
     """Ensures the required 'users' table exists."""
@@ -45,7 +46,6 @@ def initialize_db():
         cur = conn.cursor()
         
         # Create users table if it doesn't exist.
-        # Note: The 'password' column stores the hash, not the plain text password.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 student_id VARCHAR(50) PRIMARY KEY,
@@ -56,17 +56,13 @@ def initialize_db():
         """)
         
         # Add a dummy user for testing, using werkzeug.security.generate_password_hash
-        # Since we don't have the generate_password_hash function in this minimal example, 
-        # let's insert a known hash for 'testpassword' (e.g., hash for 'password123')
-        # To truly test, you'd need to pre-hash the password. 
-        # For this example, let's use a simple insertion for demonstration:
-        
-        # Hashed value for 'testpassword123' generated using Python's 'generate_password_hash'
-        DUMMY_PASSWORD_HASH = '$2b$12$R.3Qv.w.65b3HlV4d5XnAu7O6y8b3N6Xy5O7Y0E8E1U2V3D.p.f'
+        # Use generate_password_hash with 'pbkdf2:sha256' which is compatible with check_password_hash
+        DUMMY_PASSWORD = 'password123'
+        DUMMY_PASSWORD_HASH = generate_password_hash(DUMMY_PASSWORD) # Hash 'password123'
         
         cur.execute("SELECT 1 FROM users WHERE student_id = 'testuser'")
         if not cur.fetchone():
-            print("Inserting dummy user: 'testuser' with password 'password123'")
+            print(f"Inserting dummy user: 'testuser' with password '{DUMMY_PASSWORD}'")
             cur.execute("""
                 INSERT INTO users (student_id, password, mime_type) VALUES 
                 (%s, %s, %s)
@@ -87,13 +83,14 @@ def initialize_db():
 
 @app.route('/', methods=['GET'])
 def home():
-    """Simple status check for the service."""
-    try:
-        conn = get_db_connection()
-        conn.close()
-        return "Python Server is Running and successfully **Connected** to the PostgreSQL Database!", 200
-    except Exception:
-        return f"Python Server is Running, but **Failed to connect** to DB: {DB_HOST}.", 500
+    """Serves the index.html (Login page)."""
+    return send_file('index.html')
+
+@app.route('/registration', methods=['GET'])
+def registration_page():
+    """Serves the registration.html page."""
+    return send_file('registration.html')
+
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -101,7 +98,6 @@ def login():
     
     response = {'success': False, 'message': "", 'student_id': '', 'image': '', 'mime_type': ''}
     
-    # Get JSON data from the POST request (equivalent to PHP's $_POST with proper handling)
     data = request.get_json(silent=True)
     if not data:
         data = request.form # Fallback for form-encoded data
@@ -119,7 +115,7 @@ def login():
 
         # Prepare and execute the SQL query to fetch password hash and image data
         cur.execute("SELECT student_id, password, image_data, mime_type FROM users WHERE student_id = %s", (student_id,))
-        row = cur.fetchone() # Fetches a single tuple (student_id, password_hash, image_data, mime_type)
+        row = cur.fetchone() 
         column_names = [desc[0] for desc in cur.description]
         row_dict = dict(zip(column_names, row)) if row else None
 
@@ -154,10 +150,68 @@ def login():
     return jsonify(response)
 
 
+@app.route('/api/register', methods=['POST'])
+def register_student():
+    """Handles new student registration, hashes password, and inserts into DB."""
+    
+    response = {'success': False, 'message': "", 'student_id': ''}
+    data = request.get_json(silent=True)
+    
+    student_id = data.get('student_id')
+    password = data.get('password')
+
+    if not student_id or not password:
+        response['message'] = "Please provide both Student ID and Password."
+        return jsonify(response), 400
+
+    # Basic validation (must match front-end)
+    if len(student_id) < 8 or len(password) < 8:
+        response['message'] = "Student ID and Password must be at least 8 characters long."
+        return jsonify(response), 400
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # 1. Hash the password before storing it
+        hashed_password = generate_password_hash(password)
+
+        # 2. Insert new user into the database
+        cur.execute("""
+            INSERT INTO users (student_id, password) VALUES (%s, %s);
+        """, (student_id, hashed_password))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        response['success'] = True
+        response['message'] = "Registration successful."
+        response['student_id'] = student_id
+        
+    except errors.UniqueViolation:
+        response['message'] = f"Student ID '{student_id}' already exists. Please choose a different ID or log in."
+        print(f"Registration failed: Student ID already exists.")
+        return jsonify(response), 409 # HTTP 409 Conflict
+
+    except OperationalError as e:
+        response['message'] = f"Database connectivity error during registration."
+        print(f"Database error in register: {e}")
+        return jsonify(response), 500
+        
+    except Exception as e:
+        response['message'] = f"An unexpected server error occurred during registration."
+        print(f"Server error in register: {e}")
+        return jsonify(response), 500
+        
+    return jsonify(response)
+
+
 # --- Startup and Entrypoint ---
+
+# Initialize the database table before running the app
+initialize_db()
+
 if __name__ == '__main__':
-    # Initialize the database table before running the app
-    initialize_db()
-    # Not using this entrypoint in the container (CMD uses gunicorn), 
-    # but good for local development testing.
+    # This block is only for local testing, not used by Gunicorn/Docker CMD
     app.run(debug=True, host='0.0.0.0', port=8000)
