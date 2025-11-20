@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Student Portal - Virtual Student ID</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-r from-blue-500 to-purple-600 min-h-screen flex items-center justify-center p-4">
+  <!-- Login Screen -->
+  <div id="login-screen" class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
+    <h1 class="text-2xl font-bold text-gray-800 text-center mb-2">University Login</h1>
+    <p class="text-gray-500 text-center mb-6">Enter your credentials to access your virtual student card</p>
+
+    <form id="studentForm" class="space-y-4">
+      <div>
+        <label for="student_id" class="block text-sm font-medium text-gray-700 mb-1">Student ID</label>
+        <input id="student_id" type="text" placeholder="Enter your student ID"
+          class="w-full p-3 border rounded-lg focus:outline-blue-500" required>
+      </div>
+      <div>
+        <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+        <input id="password" type="password" placeholder="Enter your password"
+          class="w-full p-3 border rounded-lg focus:outline-blue-500" required>
+      </div>
+      <button type="submit" class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white p-3 rounded-xl font-semibold hover:shadow-lg transition">
+        Login
+      </button>
+    </form>
+
+    <div id="loginResult" class="mt-4"></div>
+    
+    <!-- New Registration Link -->
+    <div class="mt-6 text-center text-sm">
+      <p class="text-gray-600">New student? 
+        <a href="/registration" class="text-blue-500 hover:text-blue-700 font-semibold transition">Register here</a>
+      </p>
+    </div>
+    
+  </div>
+
+  <!-- QRCode lib -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    function showMessage(containerId, message, type) {
+      const container = document.getElementById(containerId);
+      const color = type === "error" ? "bg-red-100 text-red-600 border-red-400"
+                                     : "bg-green-100 text-green-600 border-green-400";
+      container.innerHTML = `<div class="p-3 border-l-4 rounded ${color}">${message}</div>`;
+    }
+
+    function clearMessages() {
+      document.getElementById('loginResult').innerHTML = '';
+      document.querySelectorAll('input').forEach(input => {
+        input.classList.remove('border-red-500', 'border-green-500');
+      });
+    }
+
+    function validateStudentId(studentId) {
+      return studentId.trim().length >= 8;
+    }
+
+    function validatePassword(password) {
+      return password.length >= 8;
+    }
+
+    function logout() {
+      // Reload the page to go back to the login screen
+      window.location.reload(); 
+    }
+
+    document.getElementById("studentForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      clearMessages();
+
+      const student_id = document.getElementById("student_id").value;
+      const password = document.getElementById("password").value;
+
+      let hasError = false;
+
+      if (!validateStudentId(student_id)) {
+        document.getElementById('student_id').classList.add('border-red-500');
+        showMessage('loginResult', 'Please enter a valid student ID (min 8 characters)', 'error');
+        hasError = true;
+      }
+
+      if (!validatePassword(password)) {
+        document.getElementById('password').classList.add('border-red-500');
+        showMessage('loginResult', 'Password must be at least 8 characters long', 'error');
+        hasError = true;
+      }
+
+      if (hasError) return;
+      
+      const loginButton = e.target.querySelector('button[type="submit"]');
+      const originalText = loginButton.textContent;
+      loginButton.textContent = 'Logging in...';
+      loginButton.disabled = true;
+
+      try {
+        // *** CRITICAL CHANGE: Target the /login route instead of the app.py file ***
+        const response = await fetch("/login", {
+          method: "POST",
+          // Send data as JSON, which Flask's request.get_json() can read
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ student_id: student_id, password: password })
+        });
+
+        // The API now expects JSON input and always returns JSON
+        const data = await response.json();
+        console.log('Server response:', data);
+
+        if (data.success) {
+          // Hide login screen and show student card
+          document.getElementById("login-screen").classList.add('hidden');
+          
+          // Construct the student card display
+          const studentCard = document.createElement('div');
+          studentCard.innerHTML = `
+            <div id="student-card" class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-fadeIn">
+              <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-2xl shadow-xl">
+                <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4">
+                  <div class="font-bold text-lg">Virtual Student Card</div>
+                  <button onclick="logout()" class="bg-white text-blue-600 px-3 py-1 rounded-lg text-sm font-semibold hover:bg-gray-100">Logout</button>
+                </div>
+                <div class="flex flex-col sm:flex-row sm:items-start gap-4">
+                  <div class="flex-shrink-0 w-24 h-24 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
+                    <!-- Display Image or Placeholder -->
+                    ${data.image && data.mime_type ? 
+                      `<img src="data:${data.mime_type};base64,${data.image}" class="w-full h-full object-cover" alt="Student Photo">` :
+                      `<svg class="w-12 h-12 text-gray-500" fill="currentColor" viewBox="0 0 20 20"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"></path></svg>`
+                    }
+                  </div>
+                  <div class="flex-1">
+                    <h3 class="text-xl font-semibold mb-2">${data.student_id}</h3>
+                    <p class="text-sm opacity-90">Student ID: ${data.student_id}</p>
+                    <p class="text-xs opacity-70 mt-2">Status: Enrolled</p>
+                  </div>
+                  <div class="bg-white p-2 rounded-xl flex items-center justify-center" id="qrcode"></div>
+                </div>
+              </div>
+            </div>`;
+
+          document.body.appendChild(studentCard);
+          
+          // Generate QR code
+          const qrContainer = document.getElementById("qrcode");
+          new QRCode(qrContainer, {
+            text: JSON.stringify({ student_id: data.student_id, timestamp: Date.now() }),
+            width: 80,
+            height: 80,
+            colorDark: "#1e293b",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.H
+          });
+
+        } else {
+          // If login fails, show the message on the login screen
+          showMessage('loginResult', data.message, 'error');
+        }
+      } catch (err) {
+        console.error(err);
+        showMessage('loginResult', "A network or server error occurred. Please check connectivity.", "error");
+      } finally {
+        loginButton.textContent = originalText;
+        loginButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
