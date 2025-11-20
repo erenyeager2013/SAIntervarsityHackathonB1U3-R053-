@@ -85,7 +85,7 @@
       if (hasError) return;
 
       try {
-        const response = await fetch("main.php", {
+        const response = await fetch("app.py", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: `student_id=${encodeURIComponent(student_id)}&password=${encodeURIComponent(password)}`
